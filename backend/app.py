@@ -103,34 +103,45 @@ def health_check():
 @app.route("/api/predict", methods=["POST"])
 def predict_emotion():
     if "file" not in request.files:
+        logger.error("Missing file in request")
         return jsonify({"error": "Missing file in request."}), 400
 
     file = request.files["file"]
     if not file or file.filename == "":
+        logger.error("No file selected")
         return jsonify({"error": "No file selected."}), 400
 
     filename = secure_filename(file.filename)
     _, ext = os.path.splitext(filename)
     if ext.lower() not in ALLOWED_EXTENSIONS:
+        logger.error(f"Invalid file extension: {ext}")
         return jsonify({"error": "Unsupported file format. Use .wav, .mp3, .webm, .ogg or .m4a"}), 400
 
     saved_name = f"{uuid4().hex}{ext.lower()}"
     file_path = os.path.join(UPLOAD_DIR, saved_name)
-    file.save(file_path)
-
+    
     try:
+        logger.info(f"Saving uploaded file to: {file_path}")
+        file.save(file_path)
+        logger.info(f"File saved successfully, size: {os.path.getsize(file_path)} bytes")
+        
         result = classifier.classify(file_path)
-    except Exception:
-        return jsonify({"error": "Failed to process audio file."}), 500
+        logger.info(f"Classification result: {result}")
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Failed to process audio file: {str(e)}"}), 500
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
+            logger.info(f"Cleaned up file: {file_path}")
 
     if "error" in result:
+        logger.warning(f"Classification warning: {result['error']}")
         return jsonify({"error": result["error"]}), 400
 
+    logger.info(f"Returning emotion: {result['label']}, confidence: {result['score']}")
     return jsonify({"emotion": result["label"], "confidence": result["score"]})
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)
